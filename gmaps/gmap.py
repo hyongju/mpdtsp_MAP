@@ -46,6 +46,32 @@ def get_lat_lng(location):
   return (location[LAT], location[LNG])
 
 
+class ParsedResult(object):
+
+  def __init__(self, d, s):
+    self._total_distance = d
+    self._steps = s
+
+  @property
+  def total_distance(self):
+    return self._total_distance
+
+  @property
+  def steps(self):
+    return self._steps
+
+  def __str__(self):
+    s = '{}: {} m\n'.format(TOTAL_DISTANCE, self.total_distance)
+    s += '{}: \n'.format(STEPS)
+    for step in self.steps:
+      s += '  {}\n'.format(step)
+    s = s.rstrip('\n')
+    return s
+
+  def __repr__(self):
+    return str(self)
+
+
 def parse_response(resp):
   resp_dict = json.loads(resp)
   try:
@@ -59,52 +85,50 @@ def parse_response(resp):
     legs = routes[0][LEGS]
     if len(legs) != 1:
       raise ValueError('Unexpected number of legs in a route.')
+
+    # parse the response
     leg = legs[0]
-    steps_data = leg[STEPS]
-    steps = []
-    for step_data in steps_data:
-      step = {DISTANCE: step_data[DISTANCE][VALUE], START_LOCATION: get_lat_lng(step_data[
-          START_LOCATION]), END_LOCATION: get_lat_lng(step_data[END_LOCATION])}
-      steps.append(step)
     total_distance = leg[DISTANCE][VALUE]
-    return {TOTAL_DISTANCE: total_distance, STEPS: steps}
+    steps = [get_lat_lng(leg[START_LOCATION])]
+    for step_data in leg[STEPS]:
+      lat_lng = get_lat_lng(step_data[END_LOCATION])
+      steps.append(lat_lng)
+    return ParsedResult(total_distance, steps)
   except e:
     log(resp)
     raise
 
 
-def strfmt_parsed_result(parsed):
-  s = '{}: {}\n'.format(TOTAL_DISTANCE, parsed[TOTAL_DISTANCE])
-  s += '{}: \n'.format(STEPS)
-  for step in parsed[STEPS]:
-    s += '  {\n'
-    s += '    {}: {}\n'.format(DISTANCE, step[DISTANCE])
-    s += '    {}: {}\n'.format(START_LOCATION, step[START_LOCATION])
-    s += '    {}: {}\n'.format(END_LOCATION, step[END_LOCATION])
-    s += '  },\n'
-  s = s.rstrip('\n')
-  return s
-
-
 def compute_path(orig, dest):
-  orig_dest = 'origin: {}, dest: {}'.format(orig, dest)
-  vlog(1, 'Computing distance for {}'.format(orig_dest))
   resp = send_request(orig, dest)
   vlog(3, 'Got response: {}'.format(resp))
-  # return
-  result = parse_response(resp)
   try:
-    vlog(1, 'Result for {} is:'.format(orig_dest))
-    vlog(1, strfmt_parsed_result(result))
-  except:
+    return parse_response(resp)
+  except e:
     log('Error when parsing response: {}'.format(resp))
-    raise
+    log(e)
+    # raise
+    return None
 
 
 def main():
+  # sample input
   orig = '40.6655101,-73.89188969999998'
   dest = '40.6905615,-73.9976592'
-  compute_path(orig, dest)
+
+  orig_dest = 'origin: {}, dest: {}'.format(orig, dest)
+  vlog(1, 'Computing path for {}'.format(orig_dest))
+
+  result = compute_path(orig, dest)
+  if result is not None:
+    vlog(1, 'Result for {}:'.format(orig_dest))
+    vlog(1, result)
+    # sample usage
+    #
+    # result.total_distance
+    # result.steps
+  else:
+    vlog(1, 'Could not find path for {}'.format(orig_dest))
 
 if __name__ == '__main__':
   main()
